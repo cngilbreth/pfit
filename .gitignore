@@ -23,3 +23,13 @@ src/mod/*
 src/build/*
 build/*
 mod/*
+Makefile
+Makefile.in
+aclocalm4
+autom4te*
+config.*
+configure
+install-sh
+missing
+stamp-h1
+
