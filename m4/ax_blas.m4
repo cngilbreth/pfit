@@ -129,6 +129,35 @@ if test $ax_blas_ok = no; then
 fi
 
 # BLAS in Intel MKL library?
+# MKL for gfortran
+if test x"$GFC" = xyes; then	       
+   # 64 bit
+   if test $ax_blas_ok = no; then
+     AC_CHECK_LIB(mkl_gf_lp64, $sgemm, 
+        [ax_blas_ok=yes;BLAS_LIBS="-lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lpthread -lm"],,
+        [-lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lpthread -lm])
+   fi
+   # 32 bit
+   if test $ax_blas_ok = no; then
+     AC_CHECK_LIB(mkl_gf, $sgemm, 
+        [ax_blas_ok=yes;BLAS_LIBS="-lmkl_gf -lmkl_sequential -lmkl_core -lpthread -lm"],,
+        [-lmkl_gf -lmkl_sequential -lmkl_core -lpthread -lm])
+   fi
+fi
+# MKL for Intel and PGI compilers
+# 64-bit
+if test $ax_blas_ok = no; then
+  AC_CHECK_LIB(mkl_intel_lp64, $sgemm, 
+   [ax_blas_ok=yes;BLAS_LIBS="-lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm"],,
+   [-lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm])
+fi
+# 32-bit
+if test $ax_blas_ok = no; then
+   AC_CHECK_LIB(mkl_intel, $sgemm, 
+      [ax_blas_ok=yes;BLAS_LIBS="-lmkl_intel -lmkl_sequential -lmkl_core -lpthread -lm"],,
+      [-lmkl_intel -lmkl_sequential -lmkl_core -lpthread -lm])
+fi
+# Old versions of MKL
 if test $ax_blas_ok = no; then
    AC_CHECK_LIB(mkl, $sgemm, [ax_blas_ok=yes;BLAS_LIBS="-lmkl -lguide -lpthread"],,[-lguide -lpthread])
 fi
