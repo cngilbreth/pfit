@@ -1,6 +1,6 @@
 pfit: A simple command-line polynomial fitting utility
 Chris N. Gilbreth, 2010
 
-To build, this code requires both LAPACK and LAPACK95.
+See the INSTALL file for installation instructions.
 
-To use, type ./pfit from the bin directory and read the help message.
+To use, type pfit --help and read the help message.

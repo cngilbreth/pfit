@@ -1,0 +1,39 @@
+REQUIREMENTS
+
+  To build, this code requires a Fortran 90 compiler and a working installation
+  of BLAS and LAPACK.
+
+COMPILING
+
+  If the Fortran 90 compiler, BLAS and LAPACK are accessible in the default
+  search directories, a simple
+  
+    ./configure
+    make
+    make install
+
+  should be sufficient. One should try this first to see if it works. 
+
+  By default, it will install into /usr/local/. The Fortran compiler,
+  installation path, library paths, etc. can be specified with options passed to
+  ./configure; run
+
+    ./configure --help
+
+  for more info.
+
+INTEL MATH KERNEL LIBRARY (MKL)
+
+  If you are using the Intel Math Kernel Library (MKL), or another BLAS/LAPACK
+  library which is not being found by ./configure, include it using the LIBS and
+  FFLAGS environment variables. E.g. for MKL 10.3:
+
+    source /opt/intel/composerxe/bin/compilervars.sh intel64
+    export LIBS="-L${MKLROOT}/lib/intel64 -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm"
+    export FFLAGS="-I${MKLROOT}/include"
+    ./configure
+
+  The LIBS and FFLAGS values for MKL can be determined using the Intel Link Line
+  advisor, available at:
+    http://software.intel.com/en-us/articles/intel-mkl-link-line-advisor/
+
