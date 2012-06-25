@@ -139,7 +139,7 @@ if test $ax_blas_ok = no; then
 			[ax_blas_ok=yes;BLAS_LIBS="-lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lpthread -lm"],,
 			[-lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lpthread -lm])
 		# 32 bit
-		elif test $host_cpu = i386; then
+		elif test $host_cpu = i686; then
 			AC_CHECK_LIB(mkl_gf, $sgemm,
 				[ax_blas_ok=yes;BLAS_LIBS="-lmkl_gf -lmkl_sequential -lmkl_core -lpthread -lm"],,
 				[-lmkl_gf -lmkl_sequential -lmkl_core -lpthread -lm])
@@ -152,7 +152,7 @@ if test $ax_blas_ok = no; then
 				[ax_blas_ok=yes;BLAS_LIBS="-lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm"],,
 				[-lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm])
 		# 32-bit
-		elif test $host_cpu = i386; then
+		elif test $host_cpu = i686; then
 			AC_CHECK_LIB(mkl_intel, $sgemm,
 				[ax_blas_ok=yes;BLAS_LIBS="-lmkl_intel -lmkl_sequential -lmkl_core -lpthread -lm"],,
 				[-lmkl_intel -lmkl_sequential -lmkl_core -lpthread -lm])
