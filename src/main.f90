@@ -1,4 +1,6 @@
-! Simple command-line polynomial fitting program
+! pfit: Simple command-line polynomial fitting program
+! http://infty.net/pfit/pfit.html
+! v0.8.1
 !
 ! Copyright (c) 2010-2013 Christopher N. Gilbreth
 !
@@ -23,6 +25,7 @@
 program prog_pfit
   use iso_fortran_env, only: error_unit
   use options
+  use mod_pfit
   implicit none
 
   type(options_t) :: opts
@@ -33,7 +36,7 @@ program prog_pfit
   logical,  allocatable :: mask(:)
   real(rk) :: ub, lb
   integer  :: degree, i, ierr, j, index
-  logical  :: print_corr, normal
+  logical  :: print_corr
 
   call define_help_flag(opts,print_help)
   call define_option_integer(opts,"degree",-1,abbrev='d', &
@@ -49,8 +52,6 @@ program prog_pfit
        & Default: use all data.)", min=0)
   call define_flag(opts,"corr",abbrev="c",&
        description="Print correlation matrix")
-  call define_flag(opts,"normal",abbrev='n',&
-       description="Use the normal equations")
 
   call process_command_line(opts,ierr)
   if (ierr .ne. 0) stop
@@ -115,12 +116,7 @@ program prog_pfit
   ! Fit
 
   allocate(coeff(size(x),size(a)))
-  call get_flag(opts,"normal",normal)
-  if (normal) then
-     call pfitn(x,y,errs,a,cov,coeff)
-  else
-     call pfitqr(x,y,errs,a,coeff,cov)
-  end if
+  call pfit(x,y,errs,a,coeff,cov)
 
   ! Print results
 
@@ -159,6 +155,7 @@ program prog_pfit
   end if
 
 contains
+
 
   subroutine print_help(opts)
     implicit none
@@ -322,249 +319,6 @@ contains
        is_comment = .false.
     end if
   end function is_comment
-
-
-  subroutine pfitn(x,y,sig,a,cov,coeff)
-    ! Fit data to a polynomial a_0 + a_1 x + ... + a_(m-1) x**(m-1)
-    ! Inputs:
-    !   x(1:n)         - abscissas
-    !   y(1:n)         - data values
-    !   sig(1:n)       - data errors
-    ! Outputs:
-    !   a(1:m)         - max. likelihood parameters
-    !   cov(1:m,1:m)   - covariance matrix
-    !   coeff(1:n,1:m) - coefficients giving the max. likelihood parameters
-    !                    in terms of the data:
-    !                      a(i) = \Sum_{j} coeff(j,i) * y(j)
-    ! Requirements:
-    !   Each data point y(i) must be pulled from a normal distribution with std.
-    !   dev. sig(i). Otherwise the covariance matrix will not give useful error
-    !   estimates.
-    ! Notes:
-    !   This routine solves the normal equations, which is not always a
-    !   numerically stable method!
-    implicit none
-    real(rk), intent(in)  :: x(:), y(:), sig(:)
-    real(rk), intent(out) :: a(:), cov(:,:)
-    real(rk), intent(out), optional :: coeff(:,:)
-    real(rk) :: work(size(a)*10)
-
-    integer :: ipiv(size(a)), lwork
-    integer :: i,j,k,n,m,ifail
-
-    if (size(x) .ne. size(y)) stop "Error 1 in pfit"
-    if (size(sig) .ne. size(y)) stop "Error 2 in pfit"
-    if (size(a) .ne. size(cov,dim=1)) stop "Error 3 in pfit"
-    if (size(a) .gt. size(x)) stop "Error 4 in pfit"
-    if (present(coeff)) then
-       if (size(a) .ne. size(coeff,2)) stop "Error 5 in pfit"
-       if (size(x) .ne. size(coeff,1)) stop "Error 6 in pfit"
-    end if
-
-    n = size(x) ! Number of data points
-    m = size(a) ! Number of parameters
-    cov = 0.d0; a = 0.d0
-    do j=1,m
-       do k=1,m
-          do i=1,n
-             cov(j,k) = cov(j,k) + (x(i)**(j-1) * x(i)**(k-1))/sig(i)**2
-          end do
-       end do
-       do i=1,n
-          a(j) = a(j) + y(i) * x(i)**(j-1) / sig(i)**2
-       end do
-    end do
-
-    ! Invert the matrix
-    call dgetrf(m,m,cov,m,ipiv,ifail)
-    if (ifail .ne. 0) stop "LU decomposition failed in pfit"
-    lwork = size(work)
-    call dgetri(m,cov,m,ipiv,work,lwork,ifail)
-    if (ifail .ne. 0) stop "Inversion failed in pfit"
-
-    a = matmul(cov,a)
-
-    if (present(coeff)) then
-       coeff = 0.d0
-       do j=1,m
-          do i=1,n
-             do k=1,m
-                coeff(i,j) = coeff(i,j) + cov(j,k) * x(i)**(k-1) / sig(i)**2
-             end do
-          end do
-       end do
-    end if
-  end subroutine pfitn
-
-
-
-  subroutine pfitqr(x,y,sig,a,coeff,cov)
-    ! Fit data to a polynomial a_0 + a_1 x + ... + a_(m-1) x**(m-1)
-    ! Inputs:
-    !   x(1:m)         - abscissas
-    !   y(1:m)         - data values
-    !   sig(1:m)       - data errors
-    ! Outputs:
-    !   a(1:n)         - max. likelihood parameters
-    !   coeff(1:m,1:n) - coefficients giving the max. likelihood parameters
-    !                    in terms of the data:
-    !                      a(i) = \Sum_{j} coeff(j,i) * y(j)
-    ! Notes:
-    !   This routine uses a QR decomposition method rather than solving the
-    !   normal equations, and should be more numerically stable.
-    implicit none
-    real(rk), intent(in)  :: x(:), y(:), sig(:)
-    real(rk), intent(out) :: a(:)
-    real(rk), intent(out) :: coeff(:,:), cov(:,:)
-
-    real(rk), allocatable :: work(:), C(:,:), Q(:,:), R(:,:), b(:)
-    integer :: ipiv(size(a)), lwork
-    integer :: i,j,k,n,m,ifail
-
-    if (size(x) .ne. size(y)) stop "Error 1 in pfit"
-    if (size(sig) .ne. size(y)) stop "Error 2 in pfit"
-    if (size(a) .gt. size(x)) stop "Error 4 in pfit"
-    if (size(a) .ne. size(coeff,2)) stop "Error 5 in pfit"
-    if (size(x) .ne. size(coeff,1)) stop "Error 6 in pfit"
-    if (size(a) .ne. size(cov,1)) stop "Error 7 in pfit"
-    if (size(a) .ne. size(cov,2)) stop "Error 8 in pfit"
-
-
-    m = size(x) ! Number of data points
-    n = size(a) ! Number of parameters
-    allocate(C(m,n), Q(m,m), R(n,n), b(m))
-
-    ! Vandermonde matrix
-    do j=1,n
-       do i=1,m
-          C(i,j) = x(i)**(j-1)/sig(i)
-       end do
-    end do
-
-    ! QR decomposition
-    call DQRF(C,Q,R,work)
-
-    ! Inversion of R factor
-    R = dinverse(R)
-
-    ! Compute max-likelihood parameters
-    ! a = R^-1 Q^T y/σ
-    b = 0.d0
-    do j=1,m
-       do k=1,m
-          b(j) = b(j) + Q(k,j) * y(k) / sig(k)
-       end do
-    end do
-
-    a = 0.d0
-    do i=1,n
-       do j=1,n
-          a(i) = a(i) + R(i,j) * b(j)
-       end do
-    end do
-
-    ! Compute coefficient matrix coeff such that a(i) = Σ_j coeff(j,i) y(j)
-    ! Here a(i) = R^{-1}(i,j) Q(k,j) y(k)/σ(k)
-    ! So coeff(k,i) = R^{-1}(i,j) Q(k,j) / σ(k)
-    C = 0.d0
-    do i=1,n
-       do k=1,m
-          do j=1,n
-             coeff(k,i) = coeff(k,i) + R(i,j) * Q(k,j) / sig(k)
-          end do
-       end do
-    end do
-
-    ! Compute covariance matrix Cov(a(i),a(j)) = Σ_k C(k,i) C(k,j) σ(k)^2
-    cov = 0.d0
-    do j=1,n
-       do i=1,n
-          do k=1,m
-             cov(i,j) = cov(i,j) + coeff(k,i) * coeff(k,j) * sig(k)**2
-          end do
-       end do
-    end do
-  end subroutine pfitqr
-
-
-  subroutine DQRF(A,Q,R,work)
-    ! Compute the QR factorization of a general real matrix A:
-    !   A = Q R
-    ! where Q is unitary and R is upper triangular, using the LAPACK routine
-    ! zgeqrf.
-    ! Inputs:
-    !   A:     Matrix to be factorized, m x n
-    ! Ouputs:
-    !   Q:     Unitary matrix, m x m
-    !   R:     Upper triangular, n x n
-    ! Input/output:
-    !   work:  real(8) allocatable workspace array. If unallocated, this
-    !          routine will allocate it to an appropriate size. If allocated,
-    !          it is assumed to be the correct size for this problem.
-    implicit none
-    real(8), intent(in)  :: A(:,:)
-    real(8), intent(out) :: Q(:,:), R(:,:)
-    real(8), allocatable :: work(:)
-
-    integer :: m, n, lwork, ierr, i, j
-    real(8) :: tau(size(A,2)), qwork(1)
-    real(8) :: A1(size(A,1),size(A,2))
-
-    m = size(A,1)
-    n = size(A,2)
-    if (m .lt. n) stop "Error in DQRF: m < n"
-    if (size(Q,1) .ne. m) stop "Error in DQRF (2)"
-    if (size(Q,2) .ne. m) stop "Error in DQRF (3)"
-    if (size(R,1) .ne. n) stop "Error in DQRF (4)"
-    if (size(R,2) .ne. n) stop "Error in DQRF (5)"
-
-    A1 = A
-    if (.not. allocated(work)) then
-       ! Compute size of workspace
-       lwork = -1
-       call DGEQRF(m, n, A1, m, TAU, qwork, LWORK, ierr)
-       if (ierr .ne. 0) stop "Error calling DGEQRF (1)"
-       lwork = qwork(1)
-       allocate(work(lwork))
-    end if
-
-    lwork = size(work)
-    call dgeqrf(m,n,A1,m,tau,work,lwork,ierr)
-    if (ierr .ne. 0) stop "Error calling DGEQRF (2)"
-    R = 0.d0
-    do j=1,n
-       do i=1,j
-          R(i,j) = A1(i,j)
-       end do
-    end do
-    Q(:,1:n) = A1
-    call dorgqr(m,m,n,Q,m,tau,work,lwork,ierr)
-    if (ierr .ne. 0) stop "Error calling DORGQR"
-  end subroutine DQRF
-
-
-  function dinverse(A)
-    ! Invert a square matrix
-    implicit none
-    real(8), intent(in)  :: A(:,:)
-    real(8) :: dinverse(size(A,1),size(A,1))
-
-    integer :: ipiv(size(A,1)), ierr, lwork
-    real*8, allocatable :: work(:)
-    real*8 :: work1(1)
-
-    dinverse = A
-    call dgetrf(size(A,1), size(A,1), dinverse, size(A,1), ipiv, ierr)
-    if (ierr .ne. 0) stop "Error computing LU decomposition for matrix inverse."
-
-    lwork = -1
-    call dgetri(size(A,1), dinverse, size(A,1), ipiv, work1, lwork, ierr)
-    if (ierr.ne.0) stop "Error allocating space for dgetri"
-    lwork = int(work1(1),kind(lwork))
-    allocate(work(max(1,lwork)))
-    call dgetri(size(A,1), dinverse, size(A,1), ipiv, work, lwork, ierr)
-    if (ierr .ne. 0) stop "Error calling zgetri."
-  end function dinverse
 
 
 end program prog_pfit
