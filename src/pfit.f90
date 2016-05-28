@@ -52,7 +52,7 @@ contains
 
     real(rk), allocatable :: work(:), C(:,:), Q(:,:), R(:,:), b(:)
     integer :: ipiv(size(a)), lwork
-    integer :: i,j,k,n,npt,ifail
+    integer :: i,j,k,d,npt,ifail
 
     npt = size(x) ! Number of data points
     d = size(a)-1 ! Max degree of polynomial
@@ -65,7 +65,7 @@ contains
     if (size(cov,1) .ne. d+1) stop "Error 7 in pfit"
     if (size(cov,2) .ne. d+1) stop "Error 8 in pfit"
 
-    allocate(C(npt,d+1), Q(npt,npt), R(d+1,d+1), b(d+1))
+    allocate(C(npt,d+1), Q(npt,d+1), R(d+1,d+1), b(d+1))
 
     ! Vandermonde matrix
     do j=1,d+1
@@ -147,7 +147,7 @@ contains
     n = size(A,2)
     if (m .lt. n) stop "Error in DQRF: m < n"
     if (size(Q,1) .ne. m) stop "Error in DQRF (2)"
-    if (size(Q,2) .ne. m) stop "Error in DQRF (3)"
+    if (size(Q,2) .ne. n) stop "Error in DQRF (3)"
     if (size(R,1) .ne. n) stop "Error in DQRF (4)"
     if (size(R,2) .ne. n) stop "Error in DQRF (5)"
 
@@ -171,7 +171,7 @@ contains
        end do
     end do
     Q(:,1:n) = A1
-    call dorgqr(m,m,n,Q,m,tau,work,lwork,ierr)
+    call dorgqr(m,n,n,Q,m,tau,work,lwork,ierr)
     if (ierr .ne. 0) stop "Error calling DORGQR"
   end subroutine DQRF
 
