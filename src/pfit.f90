@@ -30,17 +30,17 @@ contains
 
 
   subroutine pfit(x,y,sig,a,coeff,cov)
-    ! Fit data to a polynomial a_0 + a_1 x + ... + a_(m-1) x**(m-1)
+    ! Fit data to a polynomial a_0 + a_1 x + ... + a_d x**d
     ! Inputs:
-    !   x(1:m)         - abscissas
-    !   y(1:m)         - data values
-    !   sig(1:m)       - data errors
+    !   x(1:npt)         - abscissas
+    !   y(1:npt)         - data values
+    !   sig(1:npt)       - data errors
     ! Outputs:
-    !   a(1:n)         - max. likelihood parameters
-    !   coeff(1:m,1:n) - coefficients giving the max. likelihood parameters
+    !   a(1:d+1)         - max. likelihood parameters
+    !   coeff(1:npt,1:d+1) - coefficients giving the max. likelihood parameters
     !                    in terms of the data:
     !                      a(i) = \Sum_{j} coeff(j,i) * y(j)
-    !   cov(1:n,1:n)   - Covariance matrix, cov(i,j) = Cov(a(i),a(j))
+    !   cov(1:n,1:d+1)   - Covariance matrix, cov(i,j) = Cov(a(i),a(j))
     !                    The estimated error in a(i) is sqrt(Cov(a(i),a(i))).
     ! Notes:
     !   This routine uses a QR decomposition method, which should be more
@@ -52,24 +52,24 @@ contains
 
     real(rk), allocatable :: work(:), C(:,:), Q(:,:), R(:,:), b(:)
     integer :: ipiv(size(a)), lwork
-    integer :: i,j,k,n,m,ifail
+    integer :: i,j,k,n,npt,ifail
 
-    m = size(x) ! Number of data points
-    n = size(a) ! Number of parameters
+    npt = size(x) ! Number of data points
+    d = size(a)-1 ! Max degree of polynomial
 
-    if (size(y) .ne. m) stop "Error 1 in pfit"
-    if (size(sig) .ne. m) stop "Error 2 in pfit"
-    if (n .gt. m) stop "Error 4 in pfit"
-    if (size(coeff,1) .ne. m) stop "Error 6 in pfit"
-    if (size(coeff,2) .ne. n) stop "Error 5 in pfit"
-    if (size(cov,1) .ne. n) stop "Error 7 in pfit"
-    if (size(cov,2) .ne. n) stop "Error 8 in pfit"
+    if (size(y) .ne. npt) stop "Error 1 in pfit"
+    if (size(sig) .ne. npt) stop "Error 2 in pfit"
+    if (d+1 .gt. npt) stop "Error 4 in pfit"
+    if (size(coeff,1) .ne. npt) stop "Error 6 in pfit"
+    if (size(coeff,2) .ne. d+1) stop "Error 5 in pfit"
+    if (size(cov,1) .ne. d+1) stop "Error 7 in pfit"
+    if (size(cov,2) .ne. d+1) stop "Error 8 in pfit"
 
-    allocate(C(m,n), Q(m,m), R(n,n), b(n))
+    allocate(C(npt,d+1), Q(npt,npt), R(d+1,d+1), b(d+1))
 
     ! Vandermonde matrix
-    do j=1,n
-       do i=1,m
+    do j=1,d+1
+       do i=1,npt
           C(i,j) = x(i)**(j-1)/sig(i)
        end do
     end do
@@ -83,15 +83,15 @@ contains
     ! Compute max-likelihood parameters
     ! a = R^-1 Q^T y/σ
     b = 0.d0
-    do j=1,n
-       do k=1,m
+    do j=1,d+1
+       do k=1,npt
           b(j) = b(j) + Q(k,j) * y(k) / sig(k)
        end do
     end do
 
     a = 0.d0
-    do i=1,n
-       do j=1,n
+    do i=1,d+1
+       do j=1,d+1
           a(i) = a(i) + R(i,j) * b(j)
        end do
     end do
@@ -100,9 +100,9 @@ contains
     ! Here a(i) = R^{-1}(i,j) Q(k,j) y(k)/σ(k)
     ! So coeff(k,i) = R^{-1}(i,j) Q(k,j) / σ(k)
     coeff = 0.d0
-    do i=1,n
-       do j=1,n
-          do k=1,m
+    do i=1,d+1
+       do j=1,d+1
+          do k=1,npt
              coeff(k,i) = coeff(k,i) + R(i,j) * Q(k,j) / sig(k)
           end do
        end do
@@ -110,9 +110,9 @@ contains
 
     ! Compute covariance matrix Cov(a(i),a(j)) = Σ_k C(k,i) C(k,j) σ(k)^2
     cov = 0.d0
-    do j=1,n
-       do i=1,n
-          do k=1,m
+    do j=1,d+1
+       do i=1,d+1
+          do k=1,npt
              cov(i,j) = cov(i,j) + coeff(k,i) * coeff(k,j) * sig(k)**2
           end do
        end do
