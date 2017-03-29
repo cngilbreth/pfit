@@ -23,7 +23,6 @@ src/mod/*
 src/build/*
 build/*
 mod/*
-Makefile
 Makefile.in
 aclocalm4
 autom4te*
