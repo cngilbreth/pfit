@@ -1,8 +1,8 @@
 ! pfit: Simple command-line polynomial fitting program
 ! http://infty.net/pfit/pfit.html
-! v0.8.1
+! v0.9
 !
-! Copyright (c) 2010-2013 Christopher N. Gilbreth
+! Copyright (c) 2010-2013, 2017 Christopher N. Gilbreth
 !
 ! Permission is hereby granted, free of charge, to any person obtaining a copy
 ! of this software and associated documentation files (the "Software"), to deal
@@ -35,36 +35,54 @@ program prog_pfit
   real(rk), allocatable :: x(:), y(:), errs(:)
   logical,  allocatable :: mask(:)
   real(rk) :: ub, lb
-  integer  :: degree, i, ierr, j, index
+  integer  :: degree, i, ierr, j, index, ncols
   logical  :: print_corr
+  character(len=128) :: cols
+  integer :: icols(3)
 
   call define_help_flag(opts,print_help)
   call define_option_integer(opts,"degree",-1,abbrev='d', &
        description="Degree of polynomial to fit (required)", &
        required=.true., min=0)
   call define_option_real(opts,"lb",0.d0,abbrev='l',&
-       description="Lower bound of fit range")
+       description="Lower bound of fit range (in x coordinate)")
   call define_option_real(opts,"ub",1.d0,abbrev='u',&
-       description="Upper bound of fit range")
+       description="Upper bound of fit range (in x coordinate)")
   call define_option_integer(opts,"index",0,abbrev="i",&
        description="Index of dataset in input, starting from 0.&
        & (Datasets are separated by >= two blank lines.&
        & Default: use all data.)", min=0)
-  call define_flag(opts,"corr",abbrev="c",&
+  call define_option_string(opts,"cols","1:2:3",abbrev="c",&
+       description="Which columns of the data to use (e.g. 2:3:4 for columns&
+       & 2, 3 and 4. Default: 1:2:3)")
+  call define_flag(opts,"corr",abbrev="v",&
        description="Print correlation matrix")
 
   call process_command_line(opts,ierr)
+  if (ierr .ne. 0) stop
+  call check_required_options(opts,ierr)
   if (ierr .ne. 0) stop
 
   ! First argument is the data file
   call get_arg(opts,1,filename,ierr)
   if (ierr .ne. 0) then
-     write (error_unit,'(a)') "Error: not enough arguments. Try -h for more info."
+     !write (error_unit,'(a)') "Error: not enough arguments. Try -h for more info."
+     call print_help(opts)
      stop
   end if
   call get_option_integer(opts,"degree",degree)
   call get_option_integer(opts,"index",index)
-  call read_data(filename,index,x_raw,y_raw,errs_raw)
+  call get_option_string(opts,"cols",cols)
+  ncols = 1
+  do i=1,len_trim(cols)
+     if (cols(i:i) == ":") then
+        ncols = ncols + 1
+        cols(i:i) = ","
+     end if
+  end do
+  read (cols,*) icols(1:min(3,ncols))
+
+  call read_data(filename,index,icols(1:min(3,ncols)),x_raw,y_raw,errs_raw)
 
   if (size(x_raw) == 0) then
      write (*,'(a)') "Error: no data found"
@@ -179,17 +197,17 @@ contains
   end function itos
 
 
-  subroutine read_data(filename,index,x,y,errs)
+  subroutine read_data(filename,index,icols,x,y,errs)
     ! TODO: Allow this to take data from stdin if filename == '-'
     implicit none
     character(len=*) :: filename
-    integer, intent(in) :: index
+    integer, intent(in) :: index, icols(:)
     real(rk), allocatable :: x(:), y(:), errs(:)
 
     integer, parameter :: MAX_COLS = 16
     integer, parameter :: MAX_LINE_LEN = 1024
 
-    integer :: line
+    integer :: line, stat
     character(len=MAX_LINE_LEN) :: buf
     real(rk)  :: vals(MAX_COLS)
     integer :: nvals, char_col, val_col, current_index, n_prev_blank_lines
@@ -259,7 +277,14 @@ contains
              if (val_col > MAX_COLS) then
                 stop "Too many columns in input; increase max_cols in main.f90."
              end if
-             read (buf(char_col:),*) vals(val_col)
+             !if (val_col > 3) goto 10  ! HACK: Temporary fix for higher columns without data
+             read (buf(char_col:),*,iostat=stat) vals(val_col)
+             if (stat .ne. 0 .and. any(val_col .eq. icols)) then
+                write (error_unit,'(2(a,i0))') "Error: couldn't read data at line ", line, &
+                     ", column ", val_col
+                write (error_unit,'(a)') "Aborting!"
+                stop
+             end if
              do while (buf(char_col:char_col) .ne. ' ')
                 if (char_col == len(buf)) goto 10
                 char_col = char_col + 1
@@ -268,18 +293,18 @@ contains
 10        continue
 
           ! And pick out the ones we'll use for the fit
-          ! (Can be generalized later)
-          if (val_col < 2) then
+          if (val_col < maxval(icols)) then
              write (error_unit,'(a,i0,a)') "Error: missing data on line ", &
                   line, " of input file (not enough columns)."
              stop
           end if
           nvals = nvals + 1
-          x(nvals) = vals(1)
-          y(nvals) = vals(2)
-          if (val_col >= 3) then
-             errs(nvals) = vals(3)
+          x(nvals) = vals(icols(1))
+          y(nvals) = vals(icols(2))
+          if (size(icols) .gt. 2) then
+             errs(nvals) = vals(icols(3))
           end if
+          !write (0,*) x(nvals), y(nvals), errs(nvals)  ! Debugging
        end if
     end do
 91  continue
