@@ -1,4 +1,9 @@
 pfit: A simple command-line polynomial fitting utility
-Christopher N. Gilbreth, 2013
+Christopher N. Gilbreth, 2013, 2017
+
+To compile, edit make.inc to specify your compiler and LAPACK library.
+
+If you're using a Mac, LAPACK is already installed -- see the make.inc file.
+On Linux, you can probably install ATLAS.
 
 To use, type pfit -h and read the help message.

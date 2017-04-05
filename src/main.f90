@@ -182,6 +182,7 @@ contains
     write (*,'(a)') "pfit: fit a polynomial f(x) = a0 + a1 x + ... + ad x^d to some data"
     write (*,'(a)') "Usage: pfit [options] <filename>"
     write (*,'(a)') ''
+    write (*,'(a)') "Options:"
     call print_options(opts)
     write (*,'(a)') ''
   end subroutine print_help
