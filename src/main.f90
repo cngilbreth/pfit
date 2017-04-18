@@ -75,7 +75,7 @@ program prog_pfit
   call get_option_string(opts,"cols",cols)
   ncols = 1
   do i=1,len_trim(cols)
-     if (cols(i:i) == ":") then
+     if (cols(i:i) == ":" .or. cols(i:i) == ',') then
         ncols = ncols + 1
         cols(i:i) = ","
      end if
