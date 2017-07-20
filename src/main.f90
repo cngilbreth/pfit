@@ -134,7 +134,7 @@ program prog_pfit
   ! Fit
 
   allocate(coeff(size(x),size(a)))
-  call pfit(x,y,errs,a,coeff,cov)
+  call pfit(x,y,errs,a,cov)
 
   ! Print results
 

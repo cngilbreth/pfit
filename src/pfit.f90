@@ -29,7 +29,7 @@ module mod_pfit
 contains
 
 
-  subroutine pfit(x,y,sig,a,coeff,cov)
+  subroutine pfit(x,y,sig,a,cov,coeff)
     ! Fit data to a polynomial a_0 + a_1 x + ... + a_d x**d
     ! Inputs:
     !   x(1:npt)         - abscissas
@@ -48,11 +48,12 @@ contains
     implicit none
     real(rk), intent(in)  :: x(:), y(:), sig(:)
     real(rk), intent(out) :: a(:)
-    real(rk), intent(out) :: coeff(:,:), cov(:,:)
+    real(rk), intent(out), optional :: cov(:,:), coeff(:,:)
 
     real(rk), allocatable :: work(:), C(:,:), Q(:,:), R(:,:), b(:)
     integer :: ipiv(size(a)), lwork
     integer :: i,j,k,d,npt,ifail
+    real(rk) :: coeff1(size(x),size(a))
 
     npt = size(x) ! Number of data points
     d = size(a)-1 ! Max degree of polynomial
@@ -60,10 +61,14 @@ contains
     if (size(y) .ne. npt) stop "Error 1 in pfit"
     if (size(sig) .ne. npt) stop "Error 2 in pfit"
     if (d+1 .gt. npt) stop "Error 4 in pfit"
-    if (size(coeff,1) .ne. npt) stop "Error 6 in pfit"
-    if (size(coeff,2) .ne. d+1) stop "Error 5 in pfit"
-    if (size(cov,1) .ne. d+1) stop "Error 7 in pfit"
-    if (size(cov,2) .ne. d+1) stop "Error 8 in pfit"
+    if (present(coeff)) then
+       if (size(coeff,1) .ne. npt) stop "Error 6 in pfit"
+       if (size(coeff,2) .ne. d+1) stop "Error 5 in pfit"
+    end if
+    if (present(cov)) then
+       if (size(cov,1) .ne. d+1) stop "Error 7 in pfit"
+       if (size(cov,2) .ne. d+1) stop "Error 8 in pfit"
+    end if
 
     allocate(C(npt,d+1), Q(npt,d+1), R(d+1,d+1), b(d+1))
 
@@ -78,6 +83,8 @@ contains
     call DQRF(C,Q,R,work)
 
     ! Inversion of R factor
+    ! TODO: Should instead be able to efficiently just multiply R^-1 by (Q^T y)
+    ! since R is right triangular at Q^T y is a single column vector.
     R = dinverse(R)
 
     ! Compute max-likelihood parameters
@@ -99,24 +106,29 @@ contains
     ! Compute coefficient matrix coeff such that a(i) = Σ_j coeff(j,i) y(j)
     ! Here a(i) = R^{-1}(i,j) Q(k,j) y(k)/σ(k)
     ! So coeff(k,i) = R^{-1}(i,j) Q(k,j) / σ(k)
-    coeff = 0.d0
-    do i=1,d+1
-       do j=1,d+1
-          do k=1,npt
-             coeff(k,i) = coeff(k,i) + R(i,j) * Q(k,j) / sig(k)
+    if (present(coeff) .or. present(cov)) then
+       coeff1 = 0.d0
+       do i=1,d+1
+          do j=1,d+1
+             do k=1,npt
+                coeff1(k,i) = coeff1(k,i) + R(i,j) * Q(k,j) / sig(k)
+             end do
           end do
        end do
-    end do
+       if (present(coeff)) coeff = coeff1
+    end if
 
     ! Compute covariance matrix Cov(a(i),a(j)) = Σ_k C(k,i) C(k,j) σ(k)^2
-    cov = 0.d0
-    do j=1,d+1
-       do i=1,d+1
-          do k=1,npt
-             cov(i,j) = cov(i,j) + coeff(k,i) * coeff(k,j) * sig(k)**2
+    if (present(cov)) then
+       cov = 0.d0
+       do j=1,d+1
+          do i=1,d+1
+             do k=1,npt
+                cov(i,j) = cov(i,j) + coeff1(k,i) * coeff1(k,j) * sig(k)**2
+             end do
           end do
        end do
-    end do
+    end if
   end subroutine pfit
 
 
