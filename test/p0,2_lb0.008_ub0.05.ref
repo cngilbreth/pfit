@@ -1,0 +1,6 @@
+# Result of fitting data to f(x) = a(0) + a(2) x^2
+# in x range [ 0.8000000E-02 : 0.5000000E-01]
+# sqrt(chi^2/ndf): 1.1304716
+#Coeff             estimate               error
+0          3.1627824087E+00    9.2446493809E-02
+2         -1.1772438103E+02    7.0904319332E+01

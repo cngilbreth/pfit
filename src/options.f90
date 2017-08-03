@@ -1,8 +1,8 @@
 ! options.f90: Module for options processing
 ! http://infty.net/options/options.html
-! v0.8.1
+! v0.8.3
 !
-! Copyright (c) 2009, 2012 Christopher N. Gilbreth
+! Copyright (c) 2009, 2012, 2015 Christopher N. Gilbreth
 !
 ! Permission is hereby granted, free of charge, to any person obtaining a copy
 ! of this software and associated documentation files (the "Software"), to deal
@@ -34,7 +34,7 @@ module options
   integer, parameter, public :: descr_len = 2048
   ! Max number of options & positional arguments
   integer, parameter :: maxopts = 32
-  integer, parameter :: maxargs = 32
+  integer, parameter :: maxargs = 1024
   ! For formatting output
   integer, parameter :: name_column  = 3
   integer, parameter :: descr_column = 30
@@ -96,8 +96,8 @@ module options
   !   .and. (dtype == T_FLAG ==> Defined(lval,lvar))
   !
   ! For any intrinsic Fortran type, Defined means that the value has been
-  ! explicitly set in the program either to a valid value (either a default
-  ! value or an input value).
+  ! explicitly set in the program to a valid value (either a default value or an
+  ! input value).
   !
   ! For names, Defined(name) ==> is_name(name)
   ! Abbreviations: Defined(a) ==> (a == ' ' .or. is_abbrev_char(a))
@@ -154,7 +154,8 @@ contains
 
   ! ** REAL OPTIONS ********************************************************** !
 
-  subroutine define_option_real(opts,name,default,min,max,abbrev,required,description,group,var)
+  subroutine define_option_real(opts,name,default,min,max,abbrev,required,&
+       description,group,var)
     ! Status: Proved
     ! Postcondition: Defined(opt)
     implicit none
@@ -179,7 +180,10 @@ contains
 
     if (present(min)) opt%rmin = min
     if (present(max)) opt%rmax = max
-    if (present(var)) opt%rvar => var
+    if (present(var)) then
+       opt%rvar => var
+       var = default
+    end if
   end subroutine define_option_real
 
 
@@ -199,8 +203,9 @@ contains
 
   subroutine set_value_real(opt,valstr,ierr)
     ! Status: proved
-    ! Defined(opt) .and. ierr == 0
-    !     ==>  IsReal(valstr) .and. Defined(opt%rval) and InBounds(opt%rval)
+    ! Postcondition:
+    !   Defined(opt) .and. ierr == 0
+    !       ==>  IsReal(valstr) .and. Defined(opt%rval) and InBounds(opt%rval)
     implicit none
     type(opt_t), intent(inout) :: opt
     character(len=*), intent(in) :: valstr
@@ -210,17 +215,21 @@ contains
 
     ierr = 1
     if (.not. is_real(valstr)) then
-       write (error_unit,'(3a)') "Error: parameter ", trim(valstr), " is not a valid real number."
+       write (error_unit,'(3a)') "Error: parameter ", trim(valstr), &
+            " is not a valid real number."
        return
     end if
     read(valstr,*,iostat=ios) opt%rval
     if (ios .ne. 0) then
-       write (error_unit,'(3a)') "Error: couldn't convert ", trim(valstr), " to a real number."
+       write (error_unit,'(3a)') "Error: couldn't convert ", trim(valstr), &
+            " to a real number."
        return
     end if
     if (opt%rval < opt%rmin .or. opt%rval > opt%rmax) then
-       write (error_unit,'(3a)') 'Error: value for option "', trim(opt%name), '" out of range.'
-       write (error_unit,'(3(a,es15.8))') "Value: ", opt%rval, ", min: ", opt%rmin, ", max: ", opt%rmax
+       write (error_unit,'(3a)') 'Error: value for option "', trim(opt%name), &
+            '" out of range.'
+       write (error_unit,'(3(a,es15.8))') "Value: ", opt%rval, ", min: ", opt%rmin, &
+            ", max: ", opt%rmax
        return
     end if
     if (associated(opt%rvar)) then
@@ -271,7 +280,10 @@ contains
 
     if (present(min)) opt%imin = min
     if (present(max)) opt%imax = max
-    if (present(var)) opt%ivar => var
+    if (present(var)) then
+       opt%ivar => var
+       var = default
+    end if
   end subroutine define_option_integer
 
 
@@ -364,7 +376,10 @@ contains
 
     opt%dtype = T_LOGICAL
     opt%lval  = default
-    if (present(var)) opt%lvar => var
+    if (present(var)) then
+       opt%lvar => var
+       var = default
+    end if
   end subroutine define_option_logical
 
 
@@ -443,7 +458,10 @@ contains
 
     opt%dtype = T_STRING
     opt%cval  = default
-    if (present(var)) opt%cvar => var
+    if (present(var)) then
+       opt%cvar => var
+       var = default
+    end if
   end subroutine define_option_string
 
 
@@ -1435,16 +1453,22 @@ contains
           goto 99
        end if
     end do
+
+    ! All clear
     mierr = 0
+    ! Special case: the user just specified -h or --help and a help routine is
+    ! defined.
     if (associated(opts%help_routine)) then
        call get_flag(opts,'help',help)
        if (help) then
           call opts%help_routine(opts)
-          mierr = 3
+          stop
        end if
     end if
     if (present(ierr)) ierr = mierr
     return
+
+    ! Error handling
 99  if (associated(opts%help_routine)) then
        write (error_unit,'(a)') "Try using -h for more info."
     end if
@@ -1716,7 +1740,8 @@ contains
   ! ** INPUT FILE PROCESSING ************************************************* !
 
 
-  subroutine process_input_file(opts,filename,ierr,group,overwrite,delim_char,comment_chars)
+  subroutine process_input_file(opts,filename,ierr,group,overwrite,delim_char,&
+       comment_chars)
     ! Read input options from file
     ! Input/output:
     !   opts: Input options structure. Input file is taken from opts%arg1. On
@@ -1840,9 +1865,11 @@ contains
     name = ''
     beg = idx
 
+    ! Skip blanks
     call skip_chars(unit,blank,idx,nchar,ios)
     if (ios .ne. 0) return
 
+    ! Read option name
     call read_while(unit,is_name_char,idx,name,nchar,ios)
     if (nchar .eq. 0) then
        write (error_unit,'(a,i0,a)') 'Error: expected option name at position ', &
@@ -1856,6 +1883,7 @@ contains
     end if
     if (ios > 0) return
 
+    ! Skip blanks
     call skip_chars(unit,blank,idx,nchar,ios)
     if (ios < 0) then
        write (error_unit,'(3a)') 'Error: unexpected end of file found while&
@@ -1864,6 +1892,7 @@ contains
     end if
     if (ios > 0) return
 
+    ! Skip delimiter character
     call skip_chars(unit,delim_char,idx,nchar,ios)
     if (nchar .eq. 0) then
        write (error_unit,'(3a,i0,a)',advance='no') &
@@ -1874,11 +1903,12 @@ contains
        return
     end if
 
+    ! Skip blanks
     call skip_chars(unit,blank,idx,nchar,ios)
     if (ios > 0) return
     if (ios < 0) then
-       ! End of file -- ok
-       ierr = ios
+       ! End of file -- ok, the option value might be a blank string
+       ierr = 0
        return
     end if
 
@@ -1890,17 +1920,21 @@ contains
        call read_until_char(unit,c,idx,val,nchar,ios)
        if (ios > 0) return
        if (ios < 0) then
+          ! End of file found
           write (error_unit,'(2a)') 'Error: unterminated quote found while reading&
                & value of option "', trim(name), '"'
+          return
        end if
        idx = idx + 1
+       ierr = 0
     else
        ! No quote: read until end of line, comment character, or end of file
        end_chars = comment_chars//crlf
        call read_until_char(unit,end_chars,idx,val,nchar,ios)
        if (ios > 0) return
+       ! ios < 0 indicates end of file and is fine
+       ierr = 0
     end if
-    ierr = ios
   end subroutine parse_opt
 
 
@@ -1916,6 +1950,20 @@ contains
 
 
   subroutine read_while(unit,p,idx,buf,nchar,ios)
+    ! Read characters from a file while some predicate holds.
+    ! Input:
+    !   unit:  File unit, opened for reading (random-access)
+    !   p:     Predicate function
+    ! Input/output:
+    !   idx:   On entry: Position in the file to start at
+    !          On exit: Position in the file just past the end of the string
+    !          which has been read.
+    ! Output:
+    !   buf:   Output buffer
+    !   nchar: Number of characters read (buf(1:nchar) is the output string)
+    !   ios:   I/O status from the read statement:
+    !            ios > 0: error
+    !            ios < 0: End of file encountered
     implicit none
     integer, intent(in) :: unit
     interface
@@ -1941,6 +1989,22 @@ contains
 
 
   subroutine read_until_char(unit,chars,idx,buf,nchar,ios)
+    ! Read characters from a file one-by-one until one of a set of characters is
+    ! encountered.
+    ! Input:
+    !   unit:   File unit, opened for reading (type?)
+    !   chars:  Characters to look for. Stop reading when one of these is
+    !           encountered
+    ! Input/output:
+    !   idx:    On entry: Position in the file to start at
+    !           On exit: Position in the file just past the end of the
+    !           string which has been read.
+    ! Output:
+    !   buf:    Output buffer
+    !   nchar:  Number of characters read which are not in 'chars'
+    !           (buf(1:nchar) is the output string)
+    !   ios:    I/O status from the read statement
+    !           ios < 0 if end-of-file was encountered; ios > 0 for an error
     implicit none
     integer, intent(in) :: unit
     character(len=*), intent(in) :: chars

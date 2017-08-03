@@ -1,6 +1,6 @@
 ! pfit: Simple command-line polynomial fitting program
 ! http://infty.net/pfit/pfit.html
-! v0.9
+! v1.0_beta1
 !
 ! Copyright (c) 2010-2013, 2017 Christopher N. Gilbreth
 !
@@ -29,99 +29,105 @@ program prog_pfit
   implicit none
 
   type(options_t) :: opts
-  character(len=256) :: filename
+  character(len=opt_len) :: filename
   integer,  parameter   :: rk = selected_real_kind(p=15)
   real(rk), allocatable :: x_raw(:), y_raw(:), errs_raw(:), a(:), cov(:,:), coeff(:,:)
   real(rk), allocatable :: x(:), y(:), errs(:)
   logical,  allocatable :: mask(:)
-  real(rk) :: ub, lb
-  integer  :: degree, i, ierr, j, index, ncols
+  integer, allocatable :: d(:)
+  real(rk) :: ub, lb, chi
+  integer  :: i, ierr, j, index, ncols, nd
   logical  :: print_corr
-  character(len=128) :: cols
-  integer :: icols(3)
+  character(len=opt_len) :: cols, powers
+  integer :: icols(3), icol_prev
+
+  ! -- Command-line options ----------------------------------------------------
 
   call define_help_flag(opts,print_help)
-  call define_option_integer(opts,"degree",-1,abbrev='d', &
-       description="Degree of polynomial to fit (required)", &
-       required=.true., min=0)
-  call define_option_real(opts,"lb",0.d0,abbrev='l',&
+  call define_option_real(opts,"lb",-huge(1.d0),abbrev='l',var=lb,&
        description="Lower bound of fit range (in x coordinate)")
-  call define_option_real(opts,"ub",1.d0,abbrev='u',&
+  call define_option_real(opts,"ub",huge(1.d0),abbrev='u',var=ub,&
        description="Upper bound of fit range (in x coordinate)")
-  call define_option_integer(opts,"index",0,abbrev="i",&
+  call define_option_integer(opts,"index",-1,abbrev="i",var=index,&
        description="Index of dataset in input, starting from 0.&
        & (Datasets are separated by >= two blank lines.&
        & Default: use all data.)", min=0)
-  call define_option_string(opts,"cols","1:2:3",abbrev="c",&
+  call define_option_string(opts,"cols","1:2:3",abbrev="c",var=cols,&
        description="Which columns of the data to use (e.g. 2:3:4 for columns&
        & 2, 3 and 4. Default: 1:2:3)")
-  call define_flag(opts,"corr",abbrev="v",&
+  call define_option_string(opts,"powers","0",abbrev="p",var=powers,&
+       description="List of powers to use in fit &
+       &(f(x) = a(0) x^p(0) + a(1) x^p(1) + ...). Default: 0,1 (linear fit).")
+  call define_flag(opts,"corr",abbrev="v",var=print_corr,&
        description="Print correlation matrix")
 
-  call process_command_line(opts,ierr)
-  if (ierr .ne. 0) stop
-  call check_required_options(opts,ierr)
-  if (ierr .ne. 0) stop
+  call process_command_line(opts)
+  call check_required_options(opts)
 
   ! First argument is the data file
   call get_arg(opts,1,filename,ierr)
   if (ierr .ne. 0) then
-     !write (error_unit,'(a)') "Error: not enough arguments. Try -h for more info."
      call print_help(opts)
      stop
   end if
-  call get_option_integer(opts,"degree",degree)
-  call get_option_integer(opts,"index",index)
-  call get_option_string(opts,"cols",cols)
+
+  if (len_trim(cols) .eq. 0) &
+       stop "Error: invalid columns specified (blank string)"
   ncols = 1
+  icol_prev = 1
   do i=1,len_trim(cols)
      if (cols(i:i) == ":" .or. cols(i:i) == ',') then
+        if (.not. is_integer(cols(icol_prev:i-1))) &
+             write (0,*) "Error: ", trim(cols(icol_prev:i-1)), " is not a column"
         ncols = ncols + 1
         cols(i:i) = ","
+        icol_prev = i+1
      end if
   end do
   read (cols,*) icols(1:min(3,ncols))
+
+  nd = 1
+  do i=1,len_trim(powers)
+     if (powers(i:i) == ',') then
+        nd = nd + 1
+     end if
+  end do
+  allocate(d(nd))
+  read (powers,*) d
 
   call read_data(filename,index,icols(1:min(3,ncols)),x_raw,y_raw,errs_raw)
 
   if (size(x_raw) == 0) then
      write (*,'(a)') "Error: no data found"
      stop
-  else if (size(x_raw) < degree) then
-     write (*,'(a,i0,a)') "Error: not enough data for a degree ", degree, " fit."
+  else if (size(x_raw) < nd) then
+     write (*,'(a,i0,a)') "Error: not enough data for this polynomial"
   end if
 
-  allocate(a(degree+1), cov(degree+1,degree+1))
+  allocate(a(nd), cov(nd,nd))
 
   ! Process upper and lower bounds
 
   allocate(mask(size(x_raw)))
   mask = .true.
-  if (option_found(opts,"lb")) then
-     call get_option_real(opts,"lb",lb)
-     do i=1,size(x_raw)
-        if (x_raw(i) < lb) then
-           mask(i) = .false.
-        end if
-     end do
-  end if
-  if (option_found(opts,"ub")) then
-     call get_option_real(opts,"ub",ub)
-     do i=1,size(x_raw)
-        if (x_raw(i) > ub) then
-           mask(i) = .false.
-        end if
-     end do
-  end if
+  do i=1,size(x_raw)
+     if (x_raw(i) < lb) then
+        mask(i) = .false.
+     end if
+  end do
+  do i=1,size(x_raw)
+     if (x_raw(i) > ub) then
+        mask(i) = .false.
+     end if
+  end do
 
   if (size(x_raw) == 0) then
      write (*,'(a)') "Error: no data found"
      stop
-  else if (size(x_raw) < degree) then
-     write (*,'(a,i0,a)') "Error: not enough data for a degree ", degree, " fit."
+  else if (size(x_raw) < nd) then
+     write (*,'(a,i0,a)') "Error: not enough data for this fit"
   end if
-
-  if (count(mask) < degree) then
+  if (count(mask) < nd) then
      write (*,'(a)') "Error: not enough data within bounds for this fit."
      stop
   end if
@@ -132,26 +138,31 @@ program prog_pfit
   errs = pack(errs_raw,mask)
 
   ! Fit
-
-  allocate(coeff(size(x),size(a)))
-  call pfit(x,y,errs,a,cov)
+  call pfit(x,y,errs,d,a,cov,chi=chi)
 
   ! Print results
-
   write (*,'(a)',advance='no') "# Result of fitting data to f(x) = "
-  do i=0,degree
-     if (i > 0) then
-        write (*,'(a)', advance='no') " + "
-     end if
-     write (*,'(a,i0)',advance='no') "a", i
-     if (i > 0) then
-        write (*,'(a,i0)',advance='no') " x^", i
-     end if
+  write (*,'("a(",i0,")")',advance='no') d(1)
+  do i=2,size(d)
+     write (*,'(a,i0,a,i0)', advance='no') " + a(",d(i),") x^", d(i)
   end do
-  write (*,'(a)') ':'
+  write (*,'(/a)',advance='no') "# in x range ["
+  if (lb .eq. -huge(1d0)) then
+     write (*,'(a)',advance='no') "-inf"
+  else
+     write (*,'(g14.7)',advance='no') lb
+  end if
+  write (*,'(a)',advance='no') ' :'
+  if (ub .eq. huge(1d0)) then
+     write (*,'(a)',advance='no') " inf"
+  else
+     write (*,'(g14.7)',advance='no') ub
+  end if
+  write (*,'(a)') ']'
+  write (*,'(a,f0.7)') "# sqrt(chi^2/ndf): ", chi
   write (*,'(a,t8,a20,a20)') "#Coeff", "estimate", "error"
-  do i=0,degree
-     write (*,'(a,i0,t8,es20.10,es20.10)') "a", i, a(i+1), sqrt(cov(i+1,i+1))
+  do i=1,size(d)
+     write (*,'(i0,t8,es20.10,es20.10)') d(i), a(i), sqrt(cov(i,i))
   end do
 
   call get_flag(opts,"corr",print_corr)
